@@ -151,10 +151,11 @@ class GliderDataset(object):
 
     def __init__(self, handler_dataset):
         self.glider = handler_dataset['glider']
+        self.segment = handler_dataset['segment']
         self.headers = handler_dataset['headers']
-        self.parse_lines(handler_dataset['lines'])
+        self.__parse_lines(handler_dataset['lines'])
 
-    def parse_lines(self, lines):
+    def __parse_lines(self, lines):
         self.times = []
         self.data_by_type = {}
 
@@ -185,7 +186,15 @@ def write_netcdf(configs, sets, set_key):
     tmp_path = '/tmp/' + filename
     with open_glider_netcdf(tmp_path, 'w') as glider_nc:
         glider_nc.set_global_attributes(global_attributes)
+        glider_nc.set_platform(
+            configs[dataset.glider]['deployment']['platform']
+        )
+        glider_nc.set_trajectory_id(
+            configs[dataset.glider]['deployment']['trajectory_id']
+        )
+        glider_nc.set_segment_id(dataset.segment)
         glider_nc.set_datatypes(configs['datatypes'])
+        glider_nc.set_instruments(configs[dataset.glider]['instruments'])
         glider_nc.set_times(dataset.times)
         for datatype, data in dataset.data_by_type.items():
             glider_nc.insert_data(datatype, data)
