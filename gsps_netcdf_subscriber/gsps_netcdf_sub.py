@@ -156,6 +156,7 @@ class GliderDataset(object):
         self.__parse_lines(handler_dataset['lines'])
 
     def __parse_lines(self, lines):
+        self.time_uv = NC_FILL_VALUES['f8']
         self.times = []
         self.data_by_type = {}
 
@@ -167,6 +168,8 @@ class GliderDataset(object):
             for key in self.data_by_type.keys():
                 if key in line:
                     datum = line[key]['value']
+                    if key == 'm_water_vx-m/s':
+                        self.time_uv = line['timestamp']['value']
                 else:
                     datum = NC_FILL_VALUES['f8']
                 self.data_by_type[key].append(datum)
@@ -196,6 +199,7 @@ def write_netcdf(configs, sets, set_key):
         glider_nc.set_datatypes(configs['datatypes'])
         glider_nc.set_instruments(configs[dataset.glider]['instruments'])
         glider_nc.set_times(dataset.times)
+        glider_nc.set_time_uv(dataset.time_uv)
         for datatype, data in dataset.data_by_type.items():
             glider_nc.insert_data(datatype, data)
 
