@@ -26,123 +26,15 @@ from glider_netcdf_writer.glider_netcdf_writer import (
     open_glider_netcdf
 )
 
-from datetime import datetime
 from netCDF4 import default_fillvals as NC_FILL_VALUES
 
 from threading import Thread
 
-
-def generate_set_key(message):
-    return '%s-%s' % (message['glider'], message['start'])
-
-
-def generate_global_id(configs, dataset):
-    glider_name = dataset.glider
-    glider_id = configs[glider_name]['deployment']['platform']['id']
-    start_time = datetime.fromtimestamp(dataset.times[0])
-
-    global_id = '%s_%04d%02d%02dT%02d%02d%02d' % (
-        glider_id,
-        start_time.year,
-        start_time.month,
-        start_time.day,
-        start_time.hour,
-        start_time.minute,
-        start_time.second
-    )
-
-    return global_id
-
-
-def generate_filename(configs, dataset):
-    global_id = generate_global_id(configs, dataset)
-
-    filename = 'glider-%s_rt0.nc' % global_id
-    return filename
-
-
-def max_excluding_nc_fill(data, default_min):
-    maximum = default_min
-
-    for datum in data:
-        if datum != NC_FILL_VALUES['f8'] and datum > maximum:
-            maximum = datum
-
-    return maximum
-
-
-def set_bounds(bounds, datatypes,
-               glider_type, bound_type, resolution, units):
-    if glider_type in datatypes:
-        bounds[bound_type+'_min'] = min(datatypes[glider_type])
-        bounds[bound_type+'_max'] = (
-            max_excluding_nc_fill(
-                datatypes[glider_type],
-                bounds[bound_type+'_min']
-            )
-        )
-        bounds[bound_type+'_resolution'] = resolution
-        bounds[bound_type+'units'] = units
-
-    return bounds
-
-
-def generate_geospatial_bounds(dataset):
-    bounds = {}
-    datatypes = dataset.data_by_type
-
-    bounds = set_bounds(bounds, datatypes,
-                        'm_lat-lat', 'geospatial_lat',
-                        'point', 'degrees_north')
-
-    bounds = set_bounds(bounds, datatypes,
-                        'm_lon-lon', 'geospatial_lon',
-                        'point', 'degrees_east')
-
-    bounds = set_bounds(bounds, datatypes,
-                        'm_depth-m', 'geospatial_vertical',
-                        'point', 'meters')
-
-    bounds['geospatial_vertical_positive'] = 'down'
-
-    return bounds
-
-
-def generate_time_bounds(dataset):
-    bounds = {}
-    now_time = datetime.utcnow()
-
-    bounds['history'] = (
-        "Created on %s" % now_time.strftime('%a %b %d %H:%M:%S %Y')
-    )
-
-    start_time = datetime.fromtimestamp(min(dataset.times))
-    end_time = datetime.fromtimestamp(max(dataset.times))
-    bounds['time_coverage_start'] = start_time.isoformat()
-    bounds['time_coverage_end'] = end_time.isoformat()
-    bounds['time_coverage_resolution'] = 'point'
-
-    return bounds
-
-
-def generate_global_attributes(configs, dataset):
-    glider_name = dataset.glider
-    global_attributes = configs['global_attributes']
-    deployment_global = (
-        configs[glider_name]['deployment']['global_attributes']
-    )
-    global_attributes.update(deployment_global)
-
-    geospatial_global = generate_geospatial_bounds(dataset)
-    global_attributes.update(geospatial_global)
-
-    time_global = generate_time_bounds(dataset)
-    global_attributes.update(time_global)
-
-    global_id = generate_global_id(configs, dataset)
-    global_attributes['id'] = global_id
-
-    return global_attributes
+from gsps_netcdf_subscriber.generators import (
+    generate_global_attributes,
+    generate_filename,
+    generate_set_key
+)
 
 
 class GliderDataset(object):
@@ -164,12 +56,12 @@ class GliderDataset(object):
             self.data_by_type[header] = []
 
         for line in lines:
-            self.times.append(line['timestamp']['value'])
+            self.times.append(line['timestamp'])
             for key in self.data_by_type.keys():
                 if key in line:
-                    datum = line[key]['value']
+                    datum = line[key]
                     if key == 'm_water_vx-m/s':
-                        self.time_uv = line['timestamp']['value']
+                        self.time_uv = line['timestamp']
                 else:
                     datum = NC_FILL_VALUES['f8']
                 self.data_by_type[key].append(datum)
@@ -255,7 +147,10 @@ def handle_set_end(configs, sets, message):
 
     if set_key in sets:
         if len(sets[set_key]['lines']) == 0:
-            print "No data found"
+            logger.info(
+                "Empty set: for glider %s dataset @ %s"
+                % (message['glider'], message['start'])
+            )
             return  # No data in set, do nothing
 
         thread = Thread(
@@ -304,14 +199,25 @@ def load_configs(configs_directory):
     return configs
 
 
-def run_subscriber(configs, socket):
+def run_subscriber(configs):
+    context = zmq.Context()
+    socket = context.socket(zmq.SUB)
+    socket.connect(configs['zmq_url'])
+    socket.setsockopt(zmq.SUBSCRIBE, '')
+
     sets = {}
 
     while True:
-        message = socket.recv_json()
-        if message['message_type'] in message_handlers:
-            message_type = message['message_type']
-            message_handlers[message_type](configs, sets, message)
+        try:
+            message = socket.recv_json()
+            if message['message_type'] in message_handlers:
+                message_type = message['message_type']
+                message_handlers[message_type](configs, sets, message)
+        except Exception, e:
+            logger.error("Subscriber exited: %s" % (e))
+            break
+
+    logger.error("Subscriber exited")
 
 
 def main():
@@ -334,7 +240,19 @@ def main():
     )
     parser.add_argument(
         "--daemonize",
-        help="To daemonize or not to daemonize.  Default: false"
+        type=bool,
+        help="To daemonize or not to daemonize.  Default: false",
+        default=False
+    )
+    parser.add_argument(
+        "--log_file",
+        help="Path of log file.  Default: ./gsps_netcdf_sub.log",
+        default="./gsps_netcdf_sub.log"
+    )
+    parser.add_argument(
+        "--pid_file",
+        help="Path of PID file for daemon.  Default: ./gsps_netcdf_sub.pid",
+        default="./gsps_netcdf_sub.pid"
     )
     parser.add_argument(
         "output_directory",
@@ -343,6 +261,17 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Setup logger
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(name)s "
+                                  "- %(levelname)s - %(message)s")
+    if args.daemonize:
+        log_handler = logging.FileHandler(args.log_file)
+    else:
+        log_handler = logging.StreamHandler(sys.stdout)
+    log_handler.setFormatter(formatter)
+    logger.addHandler(log_handler)
 
     configs_directory = args.configs
     if configs_directory[-1] == '/':
@@ -354,16 +283,19 @@ def main():
         output_directory = args.output_directory[:-1]
     configs['output_directory'] = output_directory
 
-    context = zmq.Context()
-    socket = context.socket(zmq.SUB)
-    socket.connect(args.zmq_url)
-    socket.setsockopt(zmq.SUBSCRIBE, '')
+    configs['zmq_url'] = args.zmq_url
 
     if args.daemonize:
-        with daemon.DaemonContext():
-            run_subscriber(configs, socket)
+        logger.info('Starting')
+        daemon_context = daemon.DaemonContext(
+            pidfile=args.pid_file
+        )
+        with daemon_context:
+            run_subscriber(configs)
     else:
-        run_subscriber(configs, socket)
+        run_subscriber(configs)
+
+    logger.info('Stopped')
 
 if __name__ == '__main__':
     sys.exit(main())
