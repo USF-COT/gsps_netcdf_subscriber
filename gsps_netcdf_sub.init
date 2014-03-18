@@ -1,12 +1,12 @@
 #! /bin/sh
 ### BEGIN INIT INFO
-# Provides:          GSPS
+# Provides:          GSPS NetCDF Subscriber
 # Required-Start:    $remote_fs $syslog
 # Required-Stop:     $remote_fs $syslog
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: Teledyne Webb Glider Singleton Publishing Service
-# Description:       Monitors a Teledyne Webb from-glider directory for any new file updates. After not receiving any files for 10 minutes, it begins publishing the received data set via ZeroMQ. Subscribers of this service will most often either convert the data to a flat file format - such as CSV or NetCDF - or insert the new data into a database.
+# Short-Description: Teledyne Webb Glider Singleton Publishing Service NetCDF Subscriber
+# Description:       Subscribes to a publish feed from GSPS.  When a new dataset is published, it produces a NetCDF file in a specified directory.
 
 ### END INIT INFO
 
@@ -16,12 +16,12 @@
 
 # PATH should only include /usr/* if it runs after the mountnfs.sh script
 PATH=/sbin:/usr/sbin:/bin:/usr/bin:/usr/local/bin
-DESC="Teledyne Webb Glider Singleton Publishing Service"
-NAME=gsps
+DESC="Teledyne Webb Glider Singleton Publishing Service NetCDF Subscriber"
+NAME=gsps_netcdf_sub
 DAEMON=/usr/local/bin/$NAME.py
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
-DAEMON_ARGS="--daemonize true --pid_file $PIDFILE --log_file $LOGFILE /home/localuser/fromGliderData"
+DAEMON_ARGS="--daemonize true --pid_file $PIDFILE --log_file $LOGFILE /mnt/ioos"
 SCRIPTNAME=/etc/init.d/$NAME
 
 # Exit if the package is not installed

@@ -5,5 +5,8 @@ setup(
     version='1.0',
     author='Michael Lindemuth',
     author_email='mlindemu@usf.edu',
-    packages=['gsps_netcdf_subscriber']
+    packages=['gsps_netcdf_subscriber'],
+    scripts=[
+        'gsps_netcdf_subscriber/gsps_netcdf_sub.py'
+    ]
 )
