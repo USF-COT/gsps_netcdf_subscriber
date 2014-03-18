@@ -25,9 +25,10 @@ def generate_global_id(configs, dataset):
 
 
 def generate_filename(configs, dataset):
+    glider_name = dataset.glider.replace('-', '')
     global_id = generate_global_id(configs, dataset)
 
-    filename = 'glider-%s_rt0.nc' % global_id
+    filename = '%s-%s_rt0.nc' % (glider_name, global_id)
     return filename
 
 
