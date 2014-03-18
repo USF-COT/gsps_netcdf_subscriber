@@ -97,8 +97,16 @@ def write_netcdf(configs, sets, set_key):
         for datatype, data in dataset.data_by_type.items():
             glider_nc.insert_data(datatype, data)
 
-    file_path = configs['output_directory'] + '/' + filename
+    deployment_path = (
+        configs['output_directory'] + '/'
+        + configs[dataset.glider]['deployment']['directory']
+    )
+    if not os.path.exists(deployment_path):
+        os.mkdir(deployment_path)
+    file_path = deployment_path + '/' + filename
     shutil.move(tmp_path, file_path)
+
+    logger.info("Datafile written to %s" % file_path)
 
 
 def handle_set_start(configs, sets, message):
@@ -118,6 +126,11 @@ def handle_set_start(configs, sets, message):
     for header in message['headers']:
         key = header['name'] + '-' + header['units']
         sets[set_key]['headers'].append(key)
+
+    logger.info(
+        "Dataset start for %s @ %s"
+        % (message['glider'], message['start'])
+    )
 
 
 def handle_set_data(configs, sets, message):
@@ -160,6 +173,11 @@ def handle_set_end(configs, sets, message):
             args=(configs, sets, set_key)
         )
         thread.start()
+
+    logger.info(
+        "Dataset end for %s @ %s.  Processing..."
+        % (message['glider'], message['start'])
+    )
 
 
 message_handlers = {
@@ -218,8 +236,6 @@ def run_subscriber(configs):
         except Exception, e:
             logger.error("Subscriber exited: %s" % (e))
             break
-
-    logger.error("Subscriber exited")
 
 
 def main():
@@ -291,7 +307,7 @@ def main():
         logger.info('Starting')
         daemon_context = daemon.DaemonContext(
             pidfile=lockfile.FileLock(args.pid_file),
-            files_preserve=[log_handler.stream.fileno()]
+            files_preserve=[log_handler.stream.fileno()],
         )
         with daemon_context:
             run_subscriber(configs)
