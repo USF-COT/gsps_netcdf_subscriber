@@ -36,6 +36,8 @@ from gsps_netcdf_subscriber.generators import (
     generate_set_key
 )
 
+import lockfile
+
 
 class GliderDataset(object):
     """Represents a complete glider dataset
@@ -288,7 +290,8 @@ def main():
     if args.daemonize:
         logger.info('Starting')
         daemon_context = daemon.DaemonContext(
-            pidfile=args.pid_file
+            pidfile=lockfile.FileLock(args.pid_file),
+            files_preserve=[log_handler.stream.fileno()]
         )
         with daemon_context:
             run_subscriber(configs)
