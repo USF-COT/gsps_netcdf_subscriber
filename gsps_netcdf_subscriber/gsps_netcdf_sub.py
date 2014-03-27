@@ -22,7 +22,7 @@ import json
 import logging
 logger = logging.getLogger('gsps_netcdf_sub')
 
-from glider_netcdf_writer.glider_netcdf_writer import (
+from glider_netcdf_writer import (
     open_glider_netcdf
 )
 
@@ -38,6 +38,21 @@ from gsps_netcdf_subscriber.generators import (
 
 import lockfile
 
+import numpy as np
+
+from glider_utils.yo import find_yo_extrema
+
+from glider_utils.yo.filters import (
+    filter_profile_depth,
+    filter_profile_time,
+    filter_profile_distance,
+    filter_profile_number_of_points
+)
+
+from glider_utils.gps import interpolate_gps
+
+from glider_utils.ctd.salinity import calculate_practical_salinity
+
 
 class GliderDataset(object):
     """Represents a complete glider dataset
@@ -48,6 +63,33 @@ class GliderDataset(object):
         self.segment = handler_dataset['segment']
         self.headers = handler_dataset['headers']
         self.__parse_lines(handler_dataset['lines'])
+        self.__interpolate_glider_gps()
+        self.__calculate_salinity()
+
+    def __interpolate_glider_gps(self):
+        if 'm_gps_lat-lat' in self.data_by_type:
+            dataset = np.column_stack((
+                self.times,
+                self.data_by_type['m_gps_lat-lat'],
+                self.data_by_type['m_gps_lon-lon']
+            ))
+            gps = interpolate_gps(dataset)
+            self.data_by_type['lat-lat'] = gps[:, 1]
+            self.data_by_type['lon-lon'] = gps[:, 2]
+
+    def __calculate_salinity(self):
+        if 'sci_water_cond-s/m' in self.data_by_type:
+            dataset = np.column_stack((
+                self.times,
+                self.data_by_type['sci_water_cond-s/m'],
+                self.data_by_type['sci_water_temp-degc'],
+                self.data_by_type['sci_water_pressure-bar']
+            ))
+            salinity_dataset = calculate_practical_salinity(dataset)[:, 4]
+            salinity_dataset[np.isnan(salinity_dataset)] = (
+                NC_FILL_VALUES['f8']
+            )
+            self.data_by_type['salinity-psu'] = salinity_dataset
 
     def __parse_lines(self, lines):
         self.time_uv = NC_FILL_VALUES['f8']
@@ -67,6 +109,21 @@ class GliderDataset(object):
                 else:
                     datum = NC_FILL_VALUES['f8']
                 self.data_by_type[key].append(datum)
+
+    def calculate_profiles(self):
+        profiles = []
+        if 'm_depth-m' in self.data_by_type:
+            dataset = np.column_stack((
+                self.times,
+                self.data_by_type['m_depth-m']
+            ))
+            profiles = find_yo_extrema(dataset)
+            profiles = filter_profile_depth(profiles)
+            profiles = filter_profile_time(profiles)
+            profiles = filter_profile_distance(profiles)
+            profiles = filter_profile_number_of_points(profiles)
+
+        return profiles[:, 2]
 
 
 def write_netcdf(configs, sets, set_key):
@@ -94,6 +151,7 @@ def write_netcdf(configs, sets, set_key):
         glider_nc.set_instruments(configs[dataset.glider]['instruments'])
         glider_nc.set_times(dataset.times)
         glider_nc.set_time_uv(dataset.time_uv)
+        glider_nc.set_profile_ids(dataset.calculate_profiles())
         for datatype, data in dataset.data_by_type.items():
             glider_nc.insert_data(datatype, data)
 
