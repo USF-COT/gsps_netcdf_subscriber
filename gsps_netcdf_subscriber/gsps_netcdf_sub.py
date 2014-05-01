@@ -52,6 +52,7 @@ from glider_utils.yo.filters import (
 from glider_utils.gps import interpolate_gps
 
 from glider_utils.ctd.salinity import calculate_practical_salinity
+from glider_utils.ctd.density import calculate_density
 
 
 class GliderDataset(object):
@@ -64,7 +65,8 @@ class GliderDataset(object):
         self.headers = handler_dataset['headers']
         self.__parse_lines(handler_dataset['lines'])
         self.__interpolate_glider_gps()
-        self.__calculate_salinity()
+        self.__calculate_salinity_and_density()
+        self.__calculate_position_uv()
 
     def __interpolate_glider_gps(self):
         if 'm_gps_lat-lat' in self.data_by_type:
@@ -77,7 +79,7 @@ class GliderDataset(object):
             self.data_by_type['lat-lat'] = gps[:, 1]
             self.data_by_type['lon-lon'] = gps[:, 2]
 
-    def __calculate_salinity(self):
+    def __calculate_salinity_and_density(self):
         if 'sci_water_cond-s/m' in self.data_by_type:
             dataset = np.column_stack((
                 self.times,
@@ -85,11 +87,20 @@ class GliderDataset(object):
                 self.data_by_type['sci_water_temp-degc'],
                 self.data_by_type['sci_water_pressure-bar']
             ))
-            salinity_dataset = calculate_practical_salinity(dataset)[:, 4]
-            salinity_dataset[np.isnan(salinity_dataset)] = (
+            salinity_dataset = calculate_practical_salinity(dataset)
+            density_dataset = calculate_density(
+                salinity_dataset,
+                self.data_by_type['lat-lat'],
+                self.data_by_type['lon-lon']
+            )
+            density_dataset[np.isnan(density_dataset[:, 7]), 7] = (
                 NC_FILL_VALUES['f8']
             )
-            self.data_by_type['salinity-psu'] = salinity_dataset
+            density_dataset[np.isnan(density_dataset[:, 9]), 9] = (
+                NC_FILL_VALUES['f8']
+            )
+            self.data_by_type['salinity-psu'] = density_dataset[:, 7]
+            self.data_by_type['density-kg/m^3'] = density_dataset[:, 9]
 
     def __parse_lines(self, lines):
         self.time_uv = NC_FILL_VALUES['f8']
@@ -125,6 +136,17 @@ class GliderDataset(object):
 
         return profiles[:, 2]
 
+    def __calculate_position_uv(self):
+        dataset = np.column_stack((
+            self.times,
+            self.data_by_type['lat-lat'],
+            self.data_by_type['lon-lon']
+        ))
+
+        i = np.min(dataset[:, 0] - self.time_uv).argmin()
+        self.data_by_type['lat_uv-lat'] = [dataset[i, 1]]
+        self.data_by_type['lon_uv-lon'] = [dataset[i, 2]]
+
 
 def write_netcdf(configs, sets, set_key):
     dataset = GliderDataset(sets[set_key])
@@ -143,14 +165,15 @@ def write_netcdf(configs, sets, set_key):
         glider_nc.set_platform(
             configs[dataset.glider]['deployment']['platform']
         )
-        glider_nc.set_trajectory_id(
-            configs[dataset.glider]['deployment']['trajectory_id']
-        )
+        glider_nc.set_trajectory_id(1)
         glider_nc.set_segment_id(dataset.segment)
         glider_nc.set_datatypes(configs['datatypes'])
         glider_nc.set_instruments(configs[dataset.glider]['instruments'])
         glider_nc.set_times(dataset.times)
+
+        # Insert time_uv parameters
         glider_nc.set_time_uv(dataset.time_uv)
+
         glider_nc.set_profile_ids(dataset.calculate_profiles())
         for datatype, data in dataset.data_by_type.items():
             glider_nc.insert_data(datatype, data)

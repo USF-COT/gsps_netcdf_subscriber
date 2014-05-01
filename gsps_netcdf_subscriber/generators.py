@@ -53,7 +53,7 @@ def set_bounds(bounds, datatypes,
             )
         )
         bounds[bound_type+'_resolution'] = resolution
-        bounds[bound_type+'units'] = units
+        bounds[bound_type+'_units'] = units
 
     return bounds
 
@@ -82,9 +82,10 @@ def generate_geospatial_bounds(dataset):
 def generate_time_bounds(dataset):
     bounds = {}
     now_time = datetime.utcnow()
+    now_string = now_time.strftime('%a %b %d %H:%M:%S %Y')
 
     bounds['history'] = (
-        "Created on %s" % now_time.strftime('%a %b %d %H:%M:%S %Y')
+        "Created on %s" % now_string
     )
 
     start_time = datetime.fromtimestamp(min(dataset.times))
@@ -92,6 +93,9 @@ def generate_time_bounds(dataset):
     bounds['time_coverage_start'] = start_time.isoformat()
     bounds['time_coverage_end'] = end_time.isoformat()
     bounds['time_coverage_resolution'] = 'point'
+    bounds['date_created'] = now_string
+    bounds['date_issued'] = now_string
+    bounds['date_modified'] = now_string
 
     return bounds
 

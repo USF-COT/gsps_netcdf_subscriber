@@ -345,6 +345,31 @@
             }
         }
     },
+    "density-kg/m^3": {
+        "name": "density",
+        "type": "f8",
+        "dimension": "time",
+        "attrs": {
+            "units": "kg/m^3",
+            "standard_name": "sea_water_density",
+            "valid_min": 0,
+            "valid_max": 10,
+            "long_name": "Density",
+            "observation_type": "calculated",
+            "platform": "platform",
+            "instrument": "instrument_ctd",
+            "coordinates": "lon lat depth time",
+            "accuracy": " ",
+            "precision": " ",
+            "resolution": " ",
+            "sensor_name": " "
+        },
+        "status_flag": {
+            "attrs": {
+                "long_name": "density Quality Flag"
+            }
+        }
+    },
     "sci_bbfl2s_chlor_scaled-ug/l": {
         "name": "chl",
         "type": "f8",
